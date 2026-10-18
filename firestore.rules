@@ -1,5 +1,7 @@
 rules_version = '2';
-// BAND APP TEST – Kamarádky (1. etapa, revize 1g, JEN testovací projekt band-app-test-9fc3e): bezpečnostní pravidla Firestore.
+// BAND APP TEST – Kamarádky (1. etapa, revize 1h, JEN testovací projekt band-app-test-9fc3e): bezpečnostní pravidla Firestore.
+// 1h oproti 1g: JEDINÁ změna = dotaz na VLASTNÍ členství přes všechny skupiny (obnova účtu bez zálohy),
+// viz „Vlastní členství“ dole. Potřebuje index members.uid (Collection group) – firestore.indexes.json.
 // 1g oproti 1f: odstraněn souhlas (validConsent, pole „consent“). Nové záznamy pole consent mít NESMÍ;
 // starší testovací záznamy s polem consent fungují dál (schválení/odebrání/předání kontrolují jen měněná pole).
 // Veřejná BAND APP má vlastní firestore.rules beze změny.
@@ -227,6 +229,13 @@ service cloud.firestore {
         // Smazat smí autorka svou zprávu a zakladatelka (moderace).
         allow delete: if isApproved(roomId) && (resource.data.uid == me() || isOwner(roomId));
       }
+    }
+
+    // ---------- Vlastní členství (1h: obnova účtu) ----------
+    // Dotaz collectionGroup('members').where('uid', '==', <moje uid>) – každá najde JEN svoje záznamy
+    // (i čekající). Cizí členství tímto dotazem vypsat nejde (pravidlo platí pro každý vrácený záznam).
+    match /{path=**}/members/{memberUid} {
+      allow list: if signedIn() && resource.data.uid == me();
     }
 
     // Všechno ostatní je zakázané.

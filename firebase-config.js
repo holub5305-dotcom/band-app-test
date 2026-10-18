@@ -1,12 +1,12 @@
 /* BAND APP TEST – nastavení TESTOVACÍ verze Kamarádek (samostatný TESTOVACÍ projekt Firebase band-app-test-9fc3e).
- * ⚠️ Sem patří údaje TESTOVACÍHO projektu, NIKDY ne projektu, který bude používat Laurinka.
+ * ⚠️ Sem patří údaje TESTOVACÍHO projektu, NIKDY ne skutečného projektu BAND APP.
  * Tento soubor NIKDY nenahrávej do repozitáře band-app (veřejná BAND APP ho odmítne: TEST_BUILD = true).
  *
  *
  * Tyto údaje NEJSOU tajné: Firebase je navrhl tak, aby byly vidět ve webové stránce.
  * Data před jinými uživatelkami a cizími chrání bezpečnostní pravidla (firestore.rules) a App Check, ne tento soubor.
  * Zprávy nejsou koncově šifrované: vlastník/správce projektu Firebase a Google k nim mají technický přístup.
- * Obnovovací kódy Laurinky sem NEPATŘÍ – nikam se neukládají.
+ * Obnovovací kódy sem NEPATŘÍ – nikam se neukládají.
  * NIKDY sem nevkládej heslo, soukromý klíč ani "service account" JSON.
  *
  * ✅ VYPLNĚNO 18. 10. 2026: údaje webové aplikace „BAND APP TEST“ z testovacího projektu band-app-test-9fc3e
@@ -39,22 +39,18 @@ export const APP_CHECK = {
   provider: "v3"
 };
 
-/* Obnovovací kód Laurinky – technicky přihlášení Email/Password s vymyšlenou adresou účtu
+/* Obnovovací kód – technicky přihlášení Email/Password s vymyšlenou adresou účtu
  * (náhodné ID + doména níže). Na adresu se nikdy nic neposílá.
  *
- * ⚠️ NEOVĚŘENÉ technické řešení: zatím nevíme, jestli skutečný Firebase tuto adresu přijme.
- * Proto je pojistka RECOVERY_DOMAIN_VERIFIED = false. Dokud je false, aplikace obnovovací kód
- * NEVYTVOŘÍ, NEOBNOVÍ ani NEZMĚNÍ a ukazuje „Připravuje se – zatím neověřeno“.
- * Chat, pozvánky a kontakty fungují normálně (anonymní účet) – ale ztráta dat v telefonu
- * = ztráta účtu, skupiny a kontaktů.
- *
- * V TESTOVACÍ verzi ji přepneš na true podle REAL-FIREBASE-TEST.md, část A (až testovací projekt
- * Firebase vymyšlenou adresu přijme). Veřejná BAND APP má vlastní firebase-config.js a tam zůstává false,
- * dokud celý test neprojde.
+ * 1h: OVĚŘENO skutečným testem na projektu band-app-test-9fc3e (18. 10. 2026, REAL-TEST-RESULT.md):
+ * Firebase adresu …@obnova.band-app.invalid přijal (připojení se stejným uid, přihlášení, změna kódu –
+ * starý kód hned neplatí, smazání). Proto je v TÉTO testovací konfiguraci RECOVERY_DOMAIN_VERIFIED = true.
+ * Pojistka zůstává: s false aplikace kód nevytvoří, neobnoví ani nezmění („Připravuje se – zatím neověřeno“).
+ * Veřejná BAND APP má vlastní firebase-config.js a tam zůstává false.
  *
  * RECOVERY_EMAIL_DOMAIN:
  *  - výchozí "obnova.band-app.invalid" (.invalid je celosvětově vyhrazená, nikomu nepatří),
  *  - náhrada, když ji Firebase odmítne: "obnova.example.com" (vyhrazená pro příklady, spravuje IANA).
  * Doménu měň JEN PŘED vytvořením prvního skutečného kódu – po změně by dřív vytvořené kódy přestaly fungovat. */
 export const RECOVERY_EMAIL_DOMAIN = "obnova.band-app.invalid";
-export const RECOVERY_DOMAIN_VERIFIED = false;
+export const RECOVERY_DOMAIN_VERIFIED = true;   // 1h: ověřeno skutečným testem 18. 10. 2026 (REAL-TEST-RESULT.md) – JEN testovací projekt
