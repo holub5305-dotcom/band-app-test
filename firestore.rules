@@ -1,5 +1,8 @@
 rules_version = '2';
-// BAND APP – Kamarádky (1. etapa, revize 1e): bezpečnostní pravidla Firestore.
+// BAND APP TEST – Kamarádky (1. etapa, revize 1g, JEN testovací projekt band-app-test-9fc3e): bezpečnostní pravidla Firestore.
+// 1g oproti 1f: odstraněn souhlas (validConsent, pole „consent“). Nové záznamy pole consent mít NESMÍ;
+// starší testovací záznamy s polem consent fungují dál (schválení/odebrání/předání kontrolují jen měněná pole).
+// Veřejná BAND APP má vlastní firestore.rules beze změny.
 // Skupinu spravuje jen její zakladatelka. Žádný jiný (nadřízený, rodičovský) přístup ke skupinám,
 // kontaktům ani zprávám v aplikaci neexistuje.
 // POZOR – co pravidla NEchrání: platí jen pro přístup přes aplikaci/SDK. Vlastník a správci projektu
@@ -30,8 +33,6 @@ service cloud.firestore {
     function validNick(n) { return n is string && n.size() >= 1 && n.size() <= 24; }
     function validToken(t) { return t is string && t.matches('^[A-Za-z0-9_-]{22}$'); }   // 128 bitů v base64url
     function validRoomName(n) { return n is string && n.size() >= 1 && n.size() <= 40; }
-    // Souhlas: 15+ let, nebo méně než 15 let se souhlasem rodiče (jen souhlas, žádný dohled).
-    function validConsent(c) { return c in ['age15', 'under15-consent']; }
     // Pozvánka je otevřená: nepoužitá a neprošlá (expiresAt i createdAt + 24 h).
     function inviteOpen(inv) {
       return inv.used == false
@@ -94,8 +95,7 @@ service cloud.firestore {
       allow get: if signedIn() && uid == me() && docId == 'state';
       allow list: if false;
       allow create, update: if signedIn() && uid == me() && docId == 'state'
-        && request.resource.data.keys().hasOnly(['rooms', 'nick', 'favorites', 'blockedNames', 'consent', 'updatedAt'])
-        && (!('consent' in request.resource.data) || validConsent(request.resource.data.consent))
+        && request.resource.data.keys().hasOnly(['rooms', 'nick', 'favorites', 'blockedNames', 'updatedAt'])
         && request.resource.data.rooms is list && request.resource.data.rooms.size() <= 50
         && request.resource.data.favorites is list && request.resource.data.favorites.size() <= 500
         && request.resource.data.blockedNames is map && request.resource.data.blockedNames.size() <= 200
@@ -149,7 +149,7 @@ service cloud.firestore {
         allow get: if signedIn() && (uid == me() || isApproved(roomId));
         allow list: if isApproved(roomId);
 
-        // A) Zakladatelka zakládá vlastní záznam (se souhlasem) ve stejné dávce jako skupinu.
+        // A) Zakladatelka zakládá vlastní záznam ve stejné dávce jako skupinu.
         // B) Pozvaná osoba se přidá jako 'pending' jen s otevřenou pozvánkou téže skupiny,
         //    kterou ve stejném zápisu označí jako použitou.
         allow create: if signedIn() && uid == me()
@@ -158,15 +158,13 @@ service cloud.firestore {
           && request.resource.data.joinedAt == request.time
           && (
             (
-              request.resource.data.keys().hasOnly(['uid', 'nick', 'status', 'joinedAt', 'consent'])
+              request.resource.data.keys().hasOnly(['uid', 'nick', 'status', 'joinedAt'])
               && request.resource.data.status == 'owner'
-              && validConsent(request.resource.data.get('consent', ''))
               && !exists(roomPath(roomId))
               && getAfter(roomPath(roomId)).data.ownerUid == me()
             ) || (
-              request.resource.data.keys().hasOnly(['uid', 'nick', 'status', 'joinedAt', 'invite', 'consent'])
+              request.resource.data.keys().hasOnly(['uid', 'nick', 'status', 'joinedAt', 'invite'])
               && request.resource.data.status == 'pending'
-              && validConsent(request.resource.data.consent)
               && validToken(request.resource.data.invite)
               && exists(roomPath(roomId))
               && notBlocked(roomId)

@@ -11,7 +11,7 @@
 </ul></section>
 <section class="panel" id="friends"><h2>👯 Kamarádky (TEST)</h2><div id="friendsApp"><p class="muted">Kamarádky se načítají…</p></div></section>
 </main>
-<div class="footer">BAND APP TEST • testovací verze, není určená pro Laurinku</div>
+<div class="footer">BAND APP TEST • testovací verze, není určená pro Laurinku • <a href="soukromi.html" style="color:#ffb3ba">Soukromí a pravidla</a></div>
 <script type="module">
 import('./firebase-config.js').then(c=>{const el=document.getElementById('testProject');const id=(c.firebaseConfig&&c.firebaseConfig.projectId)||'?';el.textContent=c.TEST_BUILD===true?(/VLOZ/.test(id)?'zatím nevyplněný (firebase-config.js)':id):'CHYBA – nahraný není testovací firebase-config.js';}).catch(()=>{});
 if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js',{scope:'./'}).catch(()=>{});

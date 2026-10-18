@@ -1,5 +1,9 @@
-/* BAND APP – Kamarádky, 1. etapa (revize 1e): kontakty, soukromé pozvánky, textový chat
+/* BAND APP TEST – Kamarádky, 1. etapa (revize 1g, JEN TESTOVACÍ VERZE): kontakty, soukromé pozvánky, textový chat
  * a vlastní účet Laurinky s obnovovacím kódem (bez e-mailu, bez cizích účtů, bez jakéhokoli dohledu).
+ * 1g: tento soubor je SAMOSTATNÁ kopie jen pro band-app-test (veřejná BAND APP má svůj friends.js beze změny).
+ * Zjednodušená pozvánka: přezdívka + „Požádat o přijetí“ + 2 krátké řádky (soukromí, pravidla → soukromi.html).
+ * Žádná zaškrtávátka, žádný souhlas se neukládá (ani příznak přijetí pravidel), žádné tlačítko „Odmítnout“ u pozvánky.
+ * Právní základ (jen test): plnění smlouvy = Pravidla skupiny (soukromi.html), viz PROPOSAL-v2.md.
  * Samostatný ES modul. Neovlivňuje ostatní části aplikace (app.js, studio.js, voice.js, lesson-em.js),
  * nepoužívá jejich klíče v localStorage ani databázi nahrávek (IndexedDB „bandapp-recordings“).
  * Firebase se načítá až při otevření Kamarádek z oficiálního CDN (gstatic), pevná verze.
@@ -57,25 +61,22 @@ export const local = {
   favs: () => lsGet('favorites', []),
   isFav: (roomId, uid) => local.favs().includes(roomId + '/' + uid),
   toggleFav(roomId, uid) { const k = roomId + '/' + uid, f = local.favs(); lsSet('favorites', f.includes(k) ? f.filter(x => x !== k) : f.concat(k)); changed(); },
-  consent: () => lsGet('consent', ''), setConsent: c => { if (c !== local.consent()) { lsSet('consent', c); changed(); } },
   blockedNames: () => lsGet('blocked-names', {}),
   setBlockedName(uid, nick) { const m = local.blockedNames(); if (nick == null) delete m[uid]; else m[uid] = nick; lsSet('blocked-names', m); changed(); }
 };
-const CONSENTS = ['age15', 'under15-consent'];
-function localState() { return { rooms: local.rooms(), nick: local.nick(), favorites: local.favs(), blockedNames: local.blockedNames(), consent: local.consent() }; }
+// 1g: žádný souhlas se neukládá (ani v zařízení, ani v záloze). Starší záloha s polem „consent“ se při čtení jen ignoruje.
+function localState() { return { rooms: local.rooms(), nick: local.nick(), favorites: local.favs(), blockedNames: local.blockedNames() }; }
 function sanitize(s) {
   const rooms = (Array.isArray(s.rooms) ? s.rooms : []).filter(r => r && typeof r.id === 'string').slice(-50)
     .map(r => { const o = { id: r.id.slice(0, 64), name: String(r.name || '').slice(0, 40), role: String(r.role || 'member').slice(0, 12) }; if (r.from) o.from = String(r.from).slice(0, 24); return o; });
   const favorites = (Array.isArray(s.favorites) ? s.favorites : []).filter(x => typeof x === 'string').slice(-500);
   const bn = {}; Object.entries(s.blockedNames || {}).slice(-200).forEach(([k, v]) => { bn[k] = String(v).slice(0, 24); });
-  const o = { rooms, nick: cleanNick(s.nick), favorites, blockedNames: bn };
-  if (CONSENTS.includes(s.consent)) o.consent = s.consent;
-  return o;
+  return { rooms, nick: cleanNick(s.nick), favorites, blockedNames: bn };
 }
-function applyState(s) { const x = sanitize(s); lsSet('rooms', x.rooms); lsSet('nick', x.nick); lsSet('favorites', x.favorites); lsSet('blocked-names', x.blockedNames); lsSet('consent', x.consent || ''); }
+function applyState(s) { const x = sanitize(s); lsSet('rooms', x.rooms); lsSet('nick', x.nick); lsSet('favorites', x.favorites); lsSet('blocked-names', x.blockedNames); }
 function mergeState(a, b) {
   const rooms = b.rooms.slice(); a.rooms.forEach(r => { const i = rooms.findIndex(x => x.id === r.id); if (i >= 0) rooms[i] = Object.assign({}, rooms[i], r); else rooms.push(r); });
-  return { rooms, nick: a.nick || b.nick, favorites: [...new Set([...b.favorites, ...a.favorites])], blockedNames: Object.assign({}, b.blockedNames, a.blockedNames), consent: a.consent || b.consent };
+  return { rooms, nick: a.nick || b.nick, favorites: [...new Set([...b.favorites, ...a.favorites])], blockedNames: Object.assign({}, b.blockedNames, a.blockedNames) };
 }
 function backupLocal(reason) {
   const s = localState(); if (!s.rooms.length && !s.favorites.length && !s.nick) return;
@@ -114,7 +115,17 @@ function loadConfig() { return cfgp || (cfgp = import('./firebase-config.js').ca
 const DEFAULT_RECOVERY_DOMAIN = 'obnova.band-app.invalid';   // vyhrazená doména .invalid (RFC 6761) – nikomu nepatří, e-mail tam nikdy nedojde
 /* Pojistka proti záměně: testovací stránka smí běžet jen s testovacím firebase-config.js (TEST_BUILD = true)
  * a veřejná BAND APP jen s veřejným (TEST_BUILD = false/chybí). Jinak se Kamarádky nespustí. */
-export async function configMismatch() { const c = await loadConfig(); return (c.TEST_BUILD === true) !== IS_TEST_BUILD; }
+/* Druhá pojistka podle ID projektu Firebase: testovací stránka smí jen k testovacímu projektu (ID obsahuje
+ * slovo „test“, např. band-app-test-9fc3e) a veřejná BAND APP testovací projekt odmítne, i kdyby někdo
+ * přepsal TEST_BUILD. Projekt pro Laurinku proto NESMÍ mít v ID slovo „test“. Nevyplněné údaje (VLOZ_…) řeší isConfigured(). */
+const TEST_PROJECT_IDS = ['band-app-test-9fc3e'];
+const isTestProject = pid => TEST_PROJECT_IDS.includes(pid) || /(^|-)test(-|$)/i.test(pid);
+export async function configMismatch() {
+  const c = await loadConfig(); if ((c.TEST_BUILD === true) !== IS_TEST_BUILD) return true;
+  const pid = String((c.firebaseConfig || {}).projectId || '');
+  if (!pid || /VLOZ/.test(pid)) return false;
+  return isTestProject(pid) !== IS_TEST_BUILD;
+}
 export async function isConfigured() {
   if (await configMismatch()) return false;
   if (isEmulator) return true;
@@ -238,15 +249,12 @@ export async function restoreAccount(input) {
 export function deviceHasData() { const s = localState(); return !!(s.rooms.length || s.favorites.length || Object.keys(s.blockedNames).length); }
 
 /* ---------- operace s daty (pravidla ve firestore.rules je ověřují na serveru) ---------- */
-export async function createRoom(name, nick, consent) {
+export async function createRoom(name, nick) {
   const { db, F, uid } = await connect();
-  consent = consent || local.consent();
-  if (!CONSENTS.includes(consent)) throw err('bandapp/consent');
   const ref = F.doc(F.collection(db, 'rooms')), b = F.writeBatch(db);
   b.set(ref, { ownerUid: uid, name, createdAt: F.serverTimestamp(), blocked: [] });
-  b.set(F.doc(db, 'rooms', ref.id, 'members', uid), { uid, nick, status: 'owner', joinedAt: F.serverTimestamp(), consent });
+  b.set(F.doc(db, 'rooms', ref.id, 'members', uid), { uid, nick, status: 'owner', joinedAt: F.serverTimestamp() });
   await b.commit();
-  local.setConsent(consent);
   const r = { id: ref.id, name, role: 'owner' }; local.saveRoom(r); return r;
 }
 export function inviteLink(token) {
@@ -265,7 +273,7 @@ export async function getInvite(token) {
 /* Přijetí v transakci: Firestore zaručí, že při souběhu dvou osob uspěje jen jedna (druhá
  * transakce se zopakuje, uvidí used:true a skončí chybou „už použitá“). Je to JEDINÝ zápis do pozvánky,
  * který pozvaná osoba smí udělat (pravidla). Přijetím vzniká jen čekající členka – vstup schvaluje zakladatelka. */
-export async function acceptInvite(token, roomId, nick, consent) {
+export async function acceptInvite(token, roomId, nick) {
   const { db, F, uid } = await connect(), iref = F.doc(db, 'invites', token);
   await F.runTransaction(db, async tx => {
     const s = await tx.get(iref);
@@ -273,7 +281,7 @@ export async function acceptInvite(token, roomId, nick, consent) {
     const inv = s.data();
     if (inv.roomId !== roomId) throw err('bandapp/invite-room');
     if (inv.used) throw err('bandapp/invite-used');
-    tx.set(F.doc(db, 'rooms', roomId, 'members', uid), { uid, nick, status: 'pending', joinedAt: F.serverTimestamp(), invite: token, consent });
+    tx.set(F.doc(db, 'rooms', roomId, 'members', uid), { uid, nick, status: 'pending', joinedAt: F.serverTimestamp(), invite: token });
     tx.update(iref, { used: true, usedBy: uid, usedAt: F.serverTimestamp() });
   }).catch(async e => {
     // Souběh: když pozvánku mezitím použil někdo jiný, server zápis odmítne (permission-denied).
@@ -286,10 +294,8 @@ export async function acceptInvite(token, roomId, nick, consent) {
     throw e;
   });
 }
-/* Odmítnutí je jen MÍSTNÍ: na server se nic nezapisuje (pravidla to ani nedovolí), takže ho nemůže zneužít
- * nikdo, komu se odkaz dostal do ruky. Stránka token zapomene; pozvánka sama vyprší po 24 hodinách
- * (nebo ji zakladatelka zruší). */
-export function declineInvite() { try { sessionStorage.removeItem(LS + 'join-token'); } catch (e) { } }
+/* 1g: tlačítko „Odmítnout“ u pozvánky není. Odmítnutí se ani dřív nikam neposílalo – stačí stránku zavřít;
+ * pozvánka sama vyprší po 24 hodinách (nebo ji zakladatelka zruší). Pravidla zápis „odmítnutí“ dál nedovolí. */
 export async function revokeInvite(token) { const { db, F } = await connect(); await F.deleteDoc(F.doc(db, 'invites', token)); }
 export async function watchInvites(roomId, cb, onErr) {
   const { db, F } = await connect();
@@ -350,7 +356,6 @@ function errText(e) {
   if (c === 'bandapp/invite-missing') return 'Pozvánka neexistuje – byla zrušena nebo vypršela.';
   if (c === 'bandapp/bad-code') return 'Kód má špatný tvar. Obnovovací kód začíná BAND- a má dalších 32 znaků (písmena a číslice). Zkontroluj, jestli jsi ho opsala celý.';
   if (c === 'bandapp/not-this-account') return 'Tento kód nepatří k tomuto účtu.';
-  if (c === 'bandapp/consent') return 'Nejdřív potvrď souhlas (15 let, nebo souhlas rodiče).';
   if (c === 'bandapp/old-code-required') return 'Nový kód jde vytvořit jen po zadání starého kódu.';
   if (c === 'bandapp/recovery-unverified') return 'Obnovovací kód se zatím připravuje (není ověřený), proto ho teď nejde vytvořit ani použít.';
   if (c === 'bandapp/has-code') return 'Účet už obnovovací kód má. Můžeš vytvořit nový.';
@@ -392,8 +397,13 @@ function injectStyle() {
 ` }));
 }
 const btn = (cls, text, onclick, extra) => h('button', Object.assign({ class: cls, type: 'button', onclick }, extra || {}), text);
-const PRIVACY = 'Jak jsou chráněné zprávy: jiné uživatelky aplikace ani cizí lidé tvoji skupinu a zprávy neuvidí – hlídají to bezpečnostní pravidla databáze. Zprávy se ukládají na serverech Google (Firebase, EU) a NEJSOU koncově šifrované: technicky k nim má přístup vlastník a správce projektu Firebase a také Google. Ten, kdo BAND APP vyvíjí, slibuje, že tvoje zprávy číst nebude – je to slib, ne technická ochrana. Proto používej jen přezdívku a neposílej adresu, telefon, hesla ani fotky. Zprávy starší než 30 dní aplikace nezobrazí; ze serveru se úplně smažou, jen když je zapnutý automatický úklid.';
-export { PRIVACY };
+/* 1g: místo dlouhého poučení 2 krátké řádky; úplné informace a Pravidla skupiny jsou v soukromi.html. */
+const PRIVACY = 'Zprávy vidí jen schválené členky. Nejsou koncově šifrované: technicky k nim má přístup správce aplikace a Google.';
+const PRIVACY_URL = 'soukromi.html';
+const privacyLink = () => h('a', { href: PRIVACY_URL, class: 'fr-plink', 'data-act': 'privacy', style: 'color:#ffb3ba' }, 'Soukromí a pravidla →');
+/* Dva krátké řádky pod formulářem. lead = věta o přijetí pravidel (pozvánka: „Odesláním žádosti…“, zakladatelka: „Založením skupiny…“). */
+const privacyLines = lead => [h('p', { class: 'note', 'data-privacy': '1', text: PRIVACY }), h('p', { class: 'note', 'data-rules': '1' }, lead + ' ', privacyLink())];
+export { PRIVACY, PRIVACY_URL };
 
 /* ---------- chat (sdílí ho index.html i join.html) ---------- */
 export function mountChat(el, roomId, getNick, meUid) {
@@ -414,7 +424,7 @@ export function mountChat(el, roomId, getNick, meUid) {
   send.addEventListener('click', doSend);
   ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && matchMedia('(pointer:fine)').matches) { e.preventDefault(); doSend(); } });
   el.replaceChildren(list, err, h('div', { class: 'row' }, ta), h('div', { class: 'row', style: 'justify-content:space-between' }, count, send),
-    h('p', { class: 'note', text: 'V aplikaci zprávy vidí jen schválené členky této skupiny. Nejsou koncově šifrované (viz poučení). Zprávy starší než 30 dní aplikace nezobrazí.' }));
+    h('p', { class: 'note', text: 'Zprávy nejsou koncově šifrované. Starší než 30 dní se nezobrazují.' }));
   let unsub = null;
   watchMessages(roomId, msgs => {
     const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 60;
@@ -567,8 +577,8 @@ async function initIndex(root) {
   injectStyle(); root.classList.add('fr');
   if (await configMismatch()) {
     root.replaceChildren(h('div', { class: 'err', role: 'alert', 'data-state': 'config-mismatch', text: IS_TEST_BUILD
-      ? 'Tato TESTOVACÍ stránka má nahraný veřejný firebase-config.js. Kamarádky jsou vypnuté – nahraj testovací firebase-config.js (TEST_BUILD = true).'
-      : 'Do veřejné BAND APP byl nahraný testovací firebase-config.js. Kamarádky jsou vypnuté – nahraj veřejný firebase-config.js. Zbytek BAND APP funguje normálně.' }));
+      ? 'Tato TESTOVACÍ stránka má nahraný veřejný firebase-config.js (nebo údaje projektu, který není testovací). Kamarádky jsou vypnuté – nahraj testovací firebase-config.js (TEST_BUILD = true, testovací projekt).'
+      : 'Do veřejné BAND APP byl nahraný testovací firebase-config.js (nebo údaje testovacího projektu Firebase). Kamarádky jsou vypnuté – nahraj veřejný firebase-config.js. Zbytek BAND APP funguje normálně.' }));
     return;
   }
   if (!(await isConfigured())) {
@@ -583,7 +593,8 @@ async function initIndex(root) {
 
   function intro() {
     const b = btn('primary', '👯 Otevřít Kamarádky', async () => { b.disabled = true; await open(); b.disabled = false; });
-    root.replaceChildren(h('p', { text: 'Soukromý chat s kamarádkami, které sama pozveš.' }), h('p', { class: 'note', text: PRIVACY }), b,
+    root.replaceChildren(h('p', { text: 'Soukromý chat s kamarádkami, které sama pozveš a schválíš.' }), b,
+      h('p', { class: 'note' }, privacyLink()),
       h('div', { class: 'row' }, btn('secondary', '📹 Videohovor (2. etapa)', null, { disabled: true })), accountPanel(() => open()));
   }
   async function open() {
@@ -602,26 +613,17 @@ async function initIndex(root) {
     const nick = h('input', { type: 'text', maxlength: 24, id: 'frNick', placeholder: 'Tvoje přezdívka', value: local.nick() });
     const name = h('input', { type: 'text', maxlength: 40, id: 'frRoomName', placeholder: 'Název skupiny, např. Moje kapela', value: 'Moje kapela' });
     const err = h('div', { class: 'err', role: 'alert', hidden: true });
-    // Souhlas jen jednou (při založení účtu / první skupiny). Je to jen souhlas s používáním, žádný dohled.
-    const known = CONSENTS.includes(local.consent());
-    const age = h('input', { type: 'checkbox', id: 'frAge15' }), under = h('input', { type: 'checkbox', id: 'frUnder15' });
-    age.addEventListener('change', () => { if (age.checked) under.checked = false; }); under.addEventListener('change', () => { if (under.checked) age.checked = false; });
-    const consentBox = known ? null : h('div', { class: 'box', id: 'frConsentBox' }, h('strong', { text: 'Souhlas (jen jednou)' }),
-      h('label', { class: 'chk' }, age, h('span', { text: 'Je mi 15 let nebo víc.' })),
-      h('label', { class: 'chk' }, under, h('span', { text: 'Je mi méně než 15 let a rodič souhlasí s používáním BAND APP Kamarádky.' })),
-      h('p', { class: 'note', text: 'Je to jen souhlas s používáním. Aplikace nemá rodičovský dohled ani správce: kamarádky si spravuješ sama.' }));
+    // 1g: žádné zaškrtávátko ani souhlas – jen přezdívka a název skupiny.
     const go = btn('primary', 'Založit soukromou skupinu', async () => {
       const n = cleanNick(nick.value), r = name.value.trim().slice(0, 40);
       if (!n || !r) return showErr(err, 'Vyplň přezdívku i název skupiny.');
-      const consent = known ? local.consent() : age.checked ? 'age15' : under.checked ? 'under15-consent' : '';
-      if (!consent) return showErr(err, 'Zaškrtni jednu možnost souhlasu. Je-li ti méně než 15 let, potřebuješ souhlas rodiče.');
       go.disabled = true;
-      try { local.setNick(n); const room = await createRoom(r, n, consent); showRoom(room.id); } catch (e) { showErr(err, e); go.disabled = false; }
+      try { local.setNick(n); const room = await createRoom(r, n); showRoom(room.id); } catch (e) { showErr(err, e); go.disabled = false; }
     }, { id: 'frCreate' });
     const panel = accountPanel(() => open());
-    root.replaceChildren(codeReminder(panel), h('h3', { text: 'Založ si soukromou skupinu' }), h('p', { class: 'note', text: 'V aplikaci skupinu uvidí jen kamarádky, které pozveš a schválíš. Žádný veřejný seznam uživatelek neexistuje.' }),
-      h('label', { text: 'Přezdívka (ne celé jméno)' }), nick, h('label', { text: 'Název skupiny' }), name, consentBox, err, h('div', { class: 'row' }, go, cancelable && btn('secondary', 'Zpět', () => open())),
-      h('p', { class: 'note', text: PRIVACY }),
+    root.replaceChildren(codeReminder(panel), h('h3', { text: 'Založ si soukromou skupinu' }),
+      h('label', { for: 'frNick', text: 'Přezdívka (ne celé jméno)' }), nick, h('label', { for: 'frRoomName', text: 'Název skupiny' }), name, err, h('div', { class: 'row' }, go, cancelable && btn('secondary', 'Zpět', () => open())),
+      ...privacyLines('Založením skupiny přijímáš pravidla skupiny.'),
       recoveryNote('Máš už účet z jiného telefonu a obnovovací kód? Otevři „Můj účet“ níže a obnov ho svým kódem.'), panel);
   }
   function showRoom(roomId) {
@@ -668,7 +670,7 @@ async function initIndex(root) {
         };
         inviteBox.hidden = false;
         inviteBox.replaceChildren(h('strong', { text: '✉️ Nová pozvánka' }),
-          h('p', { class: 'note', text: 'Platí 24 hodin (do ' + fmtTime(new Date(inv.expires)) + ') a jde použít jen jednou. Pošli ji jen kamarádce, kterou znáš – třeba přes Messenger. Kdo ji otevře, musí počkat na schválení.' }),
+          h('p', { class: 'note', text: 'Platí 24 hodin a jen jednou. Pošli ji jen kamarádce, kterou znáš.' }),
           link, h('div', { class: 'row' }, btn('primary', '📤 Sdílet', share), btn('secondary', '📋 Kopírovat', copy)), msg);
       } catch (e) { showErr(err, e); } finally { if (b) b.disabled = false; }
     };
@@ -804,47 +806,30 @@ async function initJoin(root) {
   const exp = inv.expiresAt && inv.expiresAt.toMillis();
   if (!exp || exp <= Date.now()) { dropToken(); return say('err', 'Pozvánka vypršela. Požádej o novou.', 'expired'); }
 
+  // 1g: jediná obrazovka – přezdívka + „Požádat o přijetí“. Žádné zaškrtávátko, nic dalšího se neukládá.
   const nick = h('input', { type: 'text', id: 'jNick', maxlength: 24, placeholder: 'Tvoje přezdívka', value: local.nick(), autocomplete: 'nickname' });
-  const age = h('input', { type: 'checkbox', id: 'jAge15' }), under = h('input', { type: 'checkbox', id: 'jUnder15' }), read = h('input', { type: 'checkbox', id: 'jRead' });
-  age.addEventListener('change', () => { if (age.checked) under.checked = false; }); under.addEventListener('change', () => { if (under.checked) age.checked = false; });
   const err = h('div', { class: 'err', role: 'alert', hidden: true });
-  const accept = btn('primary', '✔ Přijmout pozvánku', async () => {
+  const accept = btn('primary', 'Požádat o přijetí', async () => {
     const n = cleanNick(nick.value);
     if (!n) { err.hidden = false; err.textContent = 'Napiš svou přezdívku.'; return; }
-    if (!age.checked && !under.checked) { err.hidden = false; err.textContent = 'Je-li ti méně než 15 let, potřebuješ souhlas rodiče. Zaškrtni jednu z možností.'; return; }
-    if (!read.checked) { err.hidden = false; err.textContent = 'Potvrď, že sis přečetla poučení.'; return; }
-    accept.disabled = decline.disabled = true; err.hidden = true;
+    accept.disabled = true; err.hidden = true;
     try {
-      await acceptInvite(token, inv.roomId, n, age.checked ? 'age15' : 'under15-consent');
+      await acceptInvite(token, inv.roomId, n);
       local.setNick(n); const r = { id: inv.roomId, name: '', role: 'pending', from: inv.fromNick }; local.saveRoom(r);
       dropToken();
       roomView(r);
     } catch (e) {
-      err.hidden = false; err.textContent = 'Pozvánku se nepodařilo přijmout. ' + errText(e);
+      err.hidden = false; err.textContent = 'Žádost se nepodařilo odeslat. ' + errText(e);
       const final = ['bandapp/invite-used', 'bandapp/invite-missing'].includes(e && e.code);
-      accept.disabled = decline.disabled = final;
+      accept.disabled = final;
       if (final) dropToken();
     }
   }, { id: 'jAccept' });
-  // Odmítnutí jen v tomto zařízení: nic se neodesílá, pozvánka na serveru zůstane beze změny a sama vyprší.
-  const decline = btn('secondary', '✖ Odmítnout', () => {
-    if (!confirm('Opravdu chceš pozvánku odmítnout?')) return;
-    declineInvite(); dropToken();
-    root.replaceChildren(h('div', { class: 'note', role: 'status', 'data-state': 'declined' },
-      h('p', { text: 'Pozvánku jsi odmítla. Tuto stránku můžeš zavřít.' }),
-      h('p', { text: 'Nic se neodeslalo a nikomu se nic nezměnilo. Pozvánka sama vyprší do 24 hodin od vytvoření.' })));
-  }, { id: 'jDecline' });
   root.replaceChildren(
-    h('h2', { text: '✉️ Pozvánka do BAND APP' }),
-    h('p', {}, 'Pozvánku posílá: ', h('strong', { text: inv.fromNick || 'kamarádka' })),
-    h('p', { text: 'Zve tě do své soukromé skupiny v BAND APP. Nemusíš nic instalovat – vše funguje tady v prohlížeči.' }),
-    h('p', { class: 'note', text: 'Pozvánka platí do ' + fmtTime(new Date(exp)) + '.' }),
-    h('div', { class: 'box' }, h('strong', { text: 'Poučení' }), h('p', { class: 'note', text: PRIVACY + ' Do skupiny tě musí ještě schválit ta, kdo tě pozvala. Kameru ani mikrofon tato verze nepoužívá.' })),
-    h('label', { for: 'jNick', text: 'Přezdívka (ne celé jméno)' }), nick,
-    h('label', { class: 'chk' }, age, h('span', { text: 'Je mi 15 let nebo víc.' })),
-    h('label', { class: 'chk' }, under, h('span', { text: 'Je mi méně než 15 let a mám souhlas rodiče.' })),
-    h('label', { class: 'chk' }, read, h('span', { text: 'Přečetla jsem si poučení.' })),
-    err, h('div', { class: 'row' }, accept, decline));
+    h('h2', { id: 'jTitle', 'data-state': 'invite' }, '✉️ Pozvánka od „', h('span', { text: inv.fromNick || 'kamarádka' }), '“'),
+    h('label', { for: 'jNick', text: 'Tvoje přezdívka (ne celé jméno)' }), nick,
+    err, h('div', { class: 'row' }, accept),
+    ...privacyLines('Odesláním žádosti přijímáš pravidla skupiny.'));
 
   function roomView(r) {
     root.replaceChildren(h('p', { class: 'note', text: 'Načítám…' }));
@@ -853,7 +838,7 @@ async function initJoin(root) {
       if (my === undefined) { if (!chatOff) say('note', 'Jsi offline. Kamarádky se připojí, až bude internet.', 'offline'); return; }
       if (!my) { if (chatOff) { chatOff(); chatOff = null; } local.dropRoom(r.id); return say('err', 'V této skupině nejsi (nebo už nejsi) členkou.', 'removed'); }
       if (r.role !== my.status) { r.role = my.status; local.saveRoom({ id: r.id, role: my.status }); }
-      if (my.status === 'pending') return root.replaceChildren(h('h2', { text: '⏳ Čekáš na schválení' }), h('p', { 'data-state': 'pending', text: 'Pozvánku jsi přijala. Až tě ' + (r.from || 'zakladatelka skupiny') + ' schválí, otevře se tady chat. Stránku si můžeš uložit do záložek.' }));
+      if (my.status === 'pending') return root.replaceChildren(h('h2', { text: '⏳ Čekáš na schválení' }), h('p', { 'data-state': 'pending', text: 'Až tě ' + (r.from || 'zakladatelka skupiny') + ' schválí, otevře se tady chat. Stránku si ulož do záložek.' }));
       if (my.status === 'owner') {
         if (chatOff) { chatOff(); chatOff = null; }
         return root.replaceChildren(h('h2', { text: '👑 Jsi zakladatelka skupiny' }),

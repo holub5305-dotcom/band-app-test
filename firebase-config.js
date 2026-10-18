@@ -1,4 +1,4 @@
-/* BAND APP TEST – nastavení TESTOVACÍ verze Kamarádek (samostatný TESTOVACÍ projekt Firebase, např. band-app-test).
+/* BAND APP TEST – nastavení TESTOVACÍ verze Kamarádek (samostatný TESTOVACÍ projekt Firebase band-app-test-9fc3e).
  * ⚠️ Sem patří údaje TESTOVACÍHO projektu, NIKDY ne projektu, který bude používat Laurinka.
  * Tento soubor NIKDY nenahrávej do repozitáře band-app (veřejná BAND APP ho odmítne: TEST_BUILD = true).
  *
@@ -9,11 +9,11 @@
  * Obnovovací kódy Laurinky sem NEPATŘÍ – nikam se neukládají.
  * NIKDY sem nevkládej heslo, soukromý klíč ani "service account" JSON.
  *
- * Postup najdeš v SETUP-FIREBASE.md:
- *  1) Ve Firebase konzoli zkopíruj údaje webové aplikace (firebaseConfig) místo textů VLOZ_...
- *  2) Přepni FIREBASE_CONFIGURED na true (v testovací verzi hned po vyplnění údajů).
- * Dokud je FIREBASE_CONFIGURED false, BAND APP funguje normálně a v sekci Kamarádky
- * jen ukáže „Kamarádky zatím nejsou nastavené“.
+ * ✅ VYPLNĚNO 18. 10. 2026: údaje webové aplikace „BAND APP TEST“ z testovacího projektu band-app-test-9fc3e
+ *    (Firebase konzole → Nastavení projektu → Vaše aplikace). FIREBASE_CONFIGURED = true.
+ *    Pojistka ve friends.js pustí testovací stránku jen k testovacímu projektu (ID obsahuje „test“)
+ *    a veřejná BAND APP tento projekt odmítne.
+ * Zbývá nastavení v konzoli Firebase a samotný test – viz REAL-FIREBASE-TEST.md.
  */
 export const FIREBASE_CONFIGURED = true;
 
@@ -32,7 +32,8 @@ export const firebaseConfig = {
 /* App Check (ochrana proti zneužití cizími skripty). Volitelné, ale doporučené.
  * siteKey: veřejný klíč webu z reCAPTCHA (v3) nebo reCAPTCHA Enterprise. Prázdné = vypnuto.
  * provider: 'v3' nebo 'enterprise'.
- * Tajný klíč reCAPTCHA se vkládá jen do Firebase konzole, NIKDY sem. */
+ * Tajný klíč reCAPTCHA se vkládá jen do Firebase konzole, NIKDY sem.
+ * Testovací verze: zatím VYPNUTO (siteKey prázdný) – App Check se testuje až samostatně (REAL-FIREBASE-TEST.md). */
 export const APP_CHECK = {
   siteKey: "",
   provider: "v3"
